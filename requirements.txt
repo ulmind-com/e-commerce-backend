@@ -11,3 +11,4 @@ cloudinary
 razorpay
 httpx
 groq
+stripe

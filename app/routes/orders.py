@@ -4,7 +4,7 @@ import random
 from app.models.order import OrderCreate, OrderResponse, OrderInDB, OrderBase
 from app.core.security import get_current_user, get_current_admin
 from app.core.db import get_database
-from app.services.razorpay_service import create_order as razorpay_create_order, verify_payment_signature
+from app.services.stripe_service import create_checkout_session, verify_session
 from app.services.email_service import send_invoice_email
 from datetime import datetime, timedelta
 import uuid
@@ -21,10 +21,24 @@ async def create_order(order_in: OrderCreate, current_user: dict = Depends(get_c
     order_dict.setdefault("order_status", "Pending")
     
     if order_in.payment_mode == "ONLINE":
-        rz_order = razorpay_create_order(order_in.total_amount)
-        if not rz_order:
-            raise HTTPException(status_code=500, detail="Could not create Razorpay order")
-        order_dict["razorpay_order_id"] = rz_order["id"]
+        # Request context is needed for full URLs, but we can rely on frontend sending it or hardcoding
+        # We will let frontend handle redirection via the returned checkout_url
+        FRONTEND_URL = "https://e-commerce-frontend-eight-mauve.vercel.app" # Or dynamically get from origin
+        success_url = f"{FRONTEND_URL}/checkout?session_id={{CHECKOUT_SESSION_ID}}&order_id={order_dict['_id']}"
+        cancel_url = f"{FRONTEND_URL}/checkout"
+        
+        stripe_session = create_checkout_session(
+            order_id=order_dict["_id"],
+            amount=order_in.total_amount + 9, # Adding the 9rs packaging fee shown on frontend
+            user_email=current_user.get("email", "customer@example.com"),
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+        if not stripe_session:
+            raise HTTPException(status_code=500, detail="Could not create Stripe Checkout Session")
+        
+        order_dict["stripe_session_id"] = stripe_session["session_id"]
+        order_dict["stripe_url"] = stripe_session["url"]
     
     db_order = OrderInDB(**order_dict)
     await db["orders"].insert_one(db_order.model_dump(by_alias=True))
@@ -86,19 +100,21 @@ async def get_order_by_id(order_id: str, current_user: dict = Depends(get_curren
 @router.post("/verify-payment")
 async def verify_payment(request: Request):
     data = await request.json()
-    rzp_order_id = data.get("razorpay_order_id")
-    rzp_payment_id = data.get("razorpay_payment_id")
-    rzp_signature = data.get("razorpay_signature")
+    session_id = data.get("session_id")
+    order_id = data.get("order_id")
     
-    if verify_payment_signature(rzp_order_id, rzp_payment_id, rzp_signature):
+    if not session_id or not order_id:
+        raise HTTPException(status_code=400, detail="Missing session_id or order_id")
+        
+    if verify_session(session_id):
         db = get_database()
         await db["orders"].update_one(
-            {"razorpay_order_id": rzp_order_id},
+            {"_id": order_id},
             {"$set": {"payment_status": "Completed"}}
         )
         return {"status": "success"}
     else:
-        raise HTTPException(status_code=400, detail="Signature verification failed")
+        raise HTTPException(status_code=400, detail="Payment verification failed")
 
 @router.put("/{order_id}/status", response_model=OrderResponse, dependencies=[Depends(get_current_admin)])
 async def update_order_status(order_id: str, request: Request):
