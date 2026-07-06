@@ -4,7 +4,7 @@ import random
 from app.models.order import OrderCreate, OrderResponse, OrderInDB, OrderBase
 from app.core.security import get_current_user, get_current_admin
 from app.core.db import get_database
-from app.services.stripe_service import create_payment_intent, verify_payment_intent
+from app.services.razorpay_service import create_order as razorpay_create_order, verify_payment_signature
 from app.services.email_service import send_invoice_email
 from datetime import datetime, timedelta
 import uuid
@@ -21,14 +21,10 @@ async def create_order(order_in: OrderCreate, current_user: dict = Depends(get_c
     order_dict.setdefault("order_status", "Pending")
     
     if order_in.payment_mode == "ONLINE":
-        stripe_pi = create_payment_intent(
-            amount=order_in.total_amount + 9,  # Adding the 9rs packaging fee
-        )
-        if not stripe_pi:
-            raise HTTPException(status_code=500, detail="Could not create Stripe Payment. Please check STRIPE_SECRET_KEY.")
-        
-        order_dict["stripe_client_secret"] = stripe_pi["client_secret"]
-        order_dict["stripe_payment_intent_id"] = stripe_pi["payment_intent_id"]
+        rz_order = razorpay_create_order(order_in.total_amount + 9)  # +9 packaging
+        if not rz_order:
+            raise HTTPException(status_code=500, detail="Could not create Razorpay order. Check RAZORPAY keys.")
+        order_dict["razorpay_order_id"] = rz_order["id"]
     
     db_order = OrderInDB(**order_dict)
     await db["orders"].insert_one(db_order.model_dump(by_alias=True))
@@ -90,35 +86,25 @@ async def get_order_by_id(order_id: str, current_user: dict = Depends(get_curren
 @router.post("/verify-payment")
 async def verify_payment(request: Request):
     data = await request.json()
+    razorpay_order_id = data.get("razorpay_order_id")
+    razorpay_payment_id = data.get("razorpay_payment_id")
+    razorpay_signature = data.get("razorpay_signature")
     order_id = data.get("order_id")
-    payment_intent_id = data.get("payment_intent_id")
-    simulated = data.get("simulated", False)
     
-    if not order_id:
-        raise HTTPException(status_code=400, detail="Missing order_id")
+    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
+        raise HTTPException(status_code=400, detail="Missing Razorpay payment details")
     
-    db = get_database()
-    
-    # Simulated payment for test-mode UPI/Netbanking/Wallets
-    if simulated:
+    if verify_payment_signature(razorpay_order_id, razorpay_payment_id, razorpay_signature):
+        db = get_database()
+        # Update by razorpay_order_id or order_id
+        filter_q = {"_id": order_id} if order_id else {"razorpay_order_id": razorpay_order_id}
         await db["orders"].update_one(
-            {"_id": order_id},
-            {"$set": {"payment_status": "Completed"}}
-        )
-        return {"status": "success"}
-    
-    # Real Stripe verification
-    if not payment_intent_id:
-        raise HTTPException(status_code=400, detail="Missing payment_intent_id")
-        
-    if verify_payment_intent(payment_intent_id):
-        await db["orders"].update_one(
-            {"_id": order_id},
-            {"$set": {"payment_status": "Completed"}}
+            filter_q,
+            {"$set": {"payment_status": "Completed", "razorpay_payment_id": razorpay_payment_id}}
         )
         return {"status": "success"}
     else:
-        raise HTTPException(status_code=400, detail="Payment verification failed")
+        raise HTTPException(status_code=400, detail="Payment signature verification failed")
 
 @router.put("/{order_id}/status", response_model=OrderResponse, dependencies=[Depends(get_current_admin)])
 async def update_order_status(order_id: str, request: Request):
