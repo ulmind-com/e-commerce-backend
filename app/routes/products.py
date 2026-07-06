@@ -9,6 +9,7 @@ import asyncio
 from functools import partial
 import urllib.request
 import re
+from app.services.recommendation_service import get_similar_products
 
 router = APIRouter()
 
@@ -166,3 +167,59 @@ async def delete_product(product_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
     return {"msg": "Product deleted successfully"}
+
+
+@router.get("/{product_id}/similar", response_model=List[ProductResponse])
+async def get_similar_products_route(product_id: str):
+    db = get_database()
+    
+    # 1. Fetch target product
+    target_product = await _find_product(db, product_id)
+    if not target_product:
+        raise HTTPException(status_code=404, detail="Product not found")
+        
+    # 2. Fetch candidates (same category)
+    category_id = target_product.get("category_id")
+    query = {"is_published": True}
+    if category_id:
+        query["category_id"] = category_id
+        
+    candidates_raw = await db["products"].find(query).limit(50).to_list(50)
+    candidates = [_serialize(p) for p in candidates_raw]
+    
+    # If not enough candidates in same category, just fetch any
+    if len(candidates) < 5:
+        candidates_raw = await db["products"].find({"is_published": True}).limit(50).to_list(50)
+        candidates = [_serialize(p) for p in candidates_raw]
+        
+    # 3. Call Groq service
+    similar_ids = get_similar_products(target_product, candidates)
+    
+    # 4. Fetch the actual products based on IDs
+    similar_products = []
+    if similar_ids:
+        # Get products in a single query
+        from bson import ObjectId
+        
+        # Build query for both string UUIDs and ObjectIds
+        object_ids = []
+        string_ids = []
+        for sid in similar_ids:
+            string_ids.append(sid)
+            try:
+                if ObjectId.is_valid(sid):
+                    object_ids.append(ObjectId(sid))
+            except:
+                pass
+                
+        id_query = {"$or": [{"_id": {"$in": string_ids}}]}
+        if object_ids:
+            id_query["$or"].append({"_id": {"$in": object_ids}})
+            
+        final_raw = await db["products"].find(id_query).to_list(10)
+        similar_products = [_serialize(p) for p in final_raw]
+        
+    # Sort them to match the Groq output order if possible
+    # We'll just return what we have
+    return similar_products
+

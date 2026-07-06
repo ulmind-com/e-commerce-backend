@@ -10,3 +10,4 @@ passlib[bcrypt]
 cloudinary
 razorpay
 httpx
+groq
