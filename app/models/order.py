@@ -35,6 +35,8 @@ class OrderBase(BaseModel):
     payment_status: str = "Pending"  # 'Pending', 'Completed', 'Failed'
     order_status: str = "Order Placed"  # 'Order Placed', 'Preparing', 'Out for Delivery', 'Delivered', 'Cancelled'
     razorpay_order_id: Optional[str] = None
+    stripe_client_secret: Optional[str] = None
+    stripe_payment_intent_id: Optional[str] = None
 
 
 class OrderCreate(BaseModel):

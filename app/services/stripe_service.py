@@ -1,54 +1,43 @@
 import os
 import stripe
 
-def create_checkout_session(order_id: str, amount: float, user_email: str, success_url: str, cancel_url: str):
+def create_payment_intent(amount: float, currency: str = 'inr'):
     """
-    Creates a Stripe Checkout Session for an order.
-    Returns the session URL.
+    Creates a Stripe PaymentIntent for inline card payment.
+    Returns client_secret and payment_intent_id.
     """
     stripe_key = os.environ.get("STRIPE_SECRET_KEY")
     if not stripe_key:
         return None
-        
     stripe.api_key = stripe_key
-    
     try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            customer_email=user_email,
-            line_items=[{
-                'price_data': {
-                    'currency': 'inr', # Or usd, depending on account setup
-                    'product_data': {
-                        'name': f'OneBasket Order #{order_id}',
-                    },
-                    'unit_amount': int(amount * 100), # Amount in paise/cents
-                },
-                'quantity': 1,
-            }],
-            mode='payment',
-            success_url=success_url,
-            cancel_url=cancel_url,
-            client_reference_id=order_id
+        intent = stripe.PaymentIntent.create(
+            amount=int(amount * 100),
+            currency=currency,
+            automatic_payment_methods={
+                'enabled': True,
+                'allow_redirects': 'never'
+            },
         )
-        return {"url": session.url, "session_id": session.id}
+        return {
+            "client_secret": intent.client_secret,
+            "payment_intent_id": intent.id
+        }
     except Exception as e:
-        print(f"Stripe Error: {e}")
+        print(f"Stripe PaymentIntent Error: {e}")
         return None
 
-def verify_session(session_id: str):
+def verify_payment_intent(payment_intent_id: str):
     """
-    Verifies if a Stripe checkout session was successfully paid.
+    Verifies if a Stripe PaymentIntent was successfully paid.
     """
     stripe_key = os.environ.get("STRIPE_SECRET_KEY")
     if not stripe_key:
         return False
-        
     stripe.api_key = stripe_key
-    
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        return session.payment_status == 'paid'
+        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        return intent.status == 'succeeded'
     except Exception as e:
         print(f"Stripe Verify Error: {e}")
         return False
