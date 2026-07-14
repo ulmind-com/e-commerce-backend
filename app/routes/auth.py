@@ -94,6 +94,32 @@ async def read_users_me(current_user: dict = Depends(get_current_user)) -> Any:
     return user
 
 
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+@router.put("/me", response_model=UserResponse)
+async def update_profile(
+    req: ProfileUpdateRequest,
+    current_user: dict = Depends(get_current_user)
+) -> Any:
+    db = get_database()
+    update_data = {}
+    if req.full_name is not None:
+        update_data["full_name"] = req.full_name
+    if req.phone is not None:
+        update_data["phone"] = req.phone
+        
+    if update_data:
+        await db["users"].update_one(
+            {"_id": current_user["id"]},
+            {"$set": update_data}
+        )
+        
+    user = await db["users"].find_one({"_id": current_user["id"]})
+    return user
+
+
 @router.post("/me/avatar")
 async def upload_user_avatar(
     file: UploadFile = File(...),

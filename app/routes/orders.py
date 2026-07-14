@@ -28,6 +28,13 @@ async def create_order(order_in: OrderCreate, current_user: dict = Depends(get_c
     
     db_order = OrderInDB(**order_dict)
     await db["orders"].insert_one(db_order.model_dump(by_alias=True))
+    
+    if order_in.payment_mode == "COD":
+        user = await db["users"].find_one({"_id": current_user["id"]})
+        if user and user.get("email"):
+            import asyncio
+            asyncio.create_task(asyncio.to_thread(send_invoice_email, user.get("email"), order_dict))
+            
     return db_order
 
 @router.get("/my-orders", response_model=List[OrderResponse])
@@ -98,10 +105,16 @@ async def verify_payment(request: Request):
         db = get_database()
         # Update by razorpay_order_id or order_id
         filter_q = {"_id": order_id} if order_id else {"razorpay_order_id": razorpay_order_id}
-        await db["orders"].update_one(
+        updated = await db["orders"].find_one_and_update(
             filter_q,
-            {"$set": {"payment_status": "Completed", "razorpay_payment_id": razorpay_payment_id}}
+            {"$set": {"payment_status": "Completed", "razorpay_payment_id": razorpay_payment_id}},
+            return_document=True
         )
+        if updated:
+            user = await db["users"].find_one({"_id": updated.get("user_id")})
+            if user and user.get("email"):
+                import asyncio
+                asyncio.create_task(asyncio.to_thread(send_invoice_email, user.get("email"), updated))
         return {"status": "success"}
     else:
         raise HTTPException(status_code=400, detail="Payment signature verification failed")
@@ -166,6 +179,39 @@ async def cancel_order(order_id: str, current_user: dict = Depends(get_current_u
     updated = await db["orders"].find_one_and_update(
         {"_id": order_id},
         {"$set": {"order_status": "Cancelled", "cancelled_by": "user"}},
+        return_document=True
+    )
+    return updated
+
+@router.put("/{order_id}/return", response_model=OrderResponse)
+async def request_return(order_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    data = await request.json()
+    reason = data.get("reason", "Not specified")
+    notes = data.get("notes", "")
+    
+    db = get_database()
+    order = await db["orders"].find_one({"_id": order_id})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+        
+    if order["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to return this order")
+        
+    if order.get("order_status") != "Delivered":
+        raise HTTPException(status_code=400, detail="Only delivered orders can be returned")
+        
+    return_details = {
+        "reason": reason,
+        "customer_notes": notes,
+        "requested_at": datetime.utcnow()
+    }
+    
+    updated = await db["orders"].find_one_and_update(
+        {"_id": order_id},
+        {"$set": {
+            "order_status": "Return Requested",
+            "return_details": return_details
+        }},
         return_document=True
     )
     return updated

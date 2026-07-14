@@ -12,6 +12,7 @@ class ProductBase(BaseModel):
     warranty: str = "No Warranty"
     stock_quantity: int
     category_id: Optional[str] = None
+    brand_id: Optional[str] = None
     image_urls: List[str] = []
     is_published: bool = True
     express_delivery_distance_km: float = 0.0

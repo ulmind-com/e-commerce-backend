@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     
     RAZORPAY_KEY_ID: str = "your_razorpay_key_id"
     RAZORPAY_KEY_SECRET: str = "your_razorpay_key_secret"
+    GROQ_API_KEY: str | None = None
 
     class Config:
         env_file = ".env"

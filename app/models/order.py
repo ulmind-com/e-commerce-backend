@@ -24,6 +24,10 @@ class DeliveryLocation(BaseModel):
     receiverName: Optional[str] = None
     receiverNumber: Optional[str] = None
 
+class GSTDetails(BaseModel):
+    companyName: str
+    gstin: str
+
 class OrderBase(BaseModel):
     user_id: str
     delivery_partner_id: Optional[str] = None
@@ -37,6 +41,7 @@ class OrderBase(BaseModel):
     razorpay_order_id: Optional[str] = None
     stripe_client_secret: Optional[str] = None
     stripe_payment_intent_id: Optional[str] = None
+    gst_details: Optional[GSTDetails] = None
 
 
 class OrderCreate(BaseModel):
@@ -46,6 +51,7 @@ class OrderCreate(BaseModel):
     delivery_address: Optional[str] = None
     delivery_location: Optional[DeliveryLocation] = None
     payment_mode: str = "COD"
+    gst_details: Optional[GSTDetails] = None
 
 
 class OrderInDB(OrderBase):

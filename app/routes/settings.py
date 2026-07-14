@@ -61,3 +61,41 @@ async def update_shop_location(request: Request) -> Dict[str, Any]:
         upsert=True
     )
     return {"status": "success", "lat": lat, "lng": lng, "express_delivery_max_distance": max_distance}
+
+@router.get("/payments")
+async def get_payment_settings() -> Dict[str, Any]:
+    db = get_database()
+    settings = await db["settings"].find_one({"_id": "payment_config"})
+    if not settings:
+        return {
+            "cod_enabled": True,
+            "cod_start_time": "09:00",
+            "cod_end_time": "22:30",
+            "cod_min_order": 200,
+            "cod_max_order": 5000,
+            "cod_surcharge": 0
+        }
+    settings.pop("_id", None)
+    return settings
+
+@router.put("/payments", dependencies=[Depends(get_current_admin)])
+async def update_payment_settings(request: Request) -> Dict[str, Any]:
+    data = await request.json()
+    
+    # Extract fields with defaults
+    update_data = {
+        "cod_enabled": data.get("cod_enabled", True),
+        "cod_start_time": data.get("cod_start_time", "09:00"),
+        "cod_end_time": data.get("cod_end_time", "22:30"),
+        "cod_min_order": float(data.get("cod_min_order", 200)),
+        "cod_max_order": float(data.get("cod_max_order", 5000)),
+        "cod_surcharge": float(data.get("cod_surcharge", 0))
+    }
+
+    db = get_database()
+    await db["settings"].update_one(
+        {"_id": "payment_config"},
+        {"$set": update_data},
+        upsert=True
+    )
+    return {"status": "success", "settings": update_data}

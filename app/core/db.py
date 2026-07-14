@@ -132,7 +132,7 @@ class InMemoryDB:
                 "email": "admin@onebasket.com",
                 "full_name": "Admin User",
                 "role": "admin",
-                "hashed_password": "$2b$12$XLyloJ6.Iu5UtwKDUsK5du9x0VpKG2D2uub8rLAW2izjGaTJISOR.",
+                "hashed_password": "$2b$12$10qmbt5qCYe/d11dvMA4e.ivV7wDmxNCENlmbE5BN/m9H9kdsGnue",
                 "created_at": datetime.utcnow()
             }
         ]
