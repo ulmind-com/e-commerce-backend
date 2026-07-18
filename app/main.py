@@ -5,7 +5,7 @@ import random
 from app.core.config import settings
 from app.core.db import connect_to_mongo, close_mongo_connection, get_database
 
-from app.routes import auth, products, categories, brands, orders, admin, reviews, location, returns, cod, coupons, banners, notifications, cms, reviews_admin
+from app.routes import auth, products, categories, brands, orders, admin, reviews, location, returns, cod, coupons, banners, notifications, cms, reviews_admin, analytics, reports, finance, staff, suppliers, audit, ai, security
 from app.routes import settings as settings_router
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -34,6 +34,14 @@ app.include_router(banners.router, prefix="/api/banners", tags=["banners"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 app.include_router(cms.router, prefix="/api/cms", tags=["cms"])
 app.include_router(reviews_admin.router, prefix="/api/admin/reviews", tags=["admin_reviews"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["analytics"])
+app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
+app.include_router(finance.router, prefix="/api/finance", tags=["finance"])
+app.include_router(staff.router, prefix="/api/staff", tags=["staff"])
+app.include_router(suppliers.router, prefix="/api/suppliers", tags=["suppliers"])
+app.include_router(audit.router, prefix="/api/audit", tags=["audit"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(security.router, prefix="/api/security", tags=["security"])
 
 @app.on_event("startup")
 async def startup_db_client():
